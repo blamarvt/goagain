@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/rcrowley/goagain"
 	"fmt"
+	"github.com/blamarvt/goagain"
 	"log"
 	"net"
 	"syscall"
@@ -37,14 +37,17 @@ func main() {
 		go serve(l)
 
 		// Kill the parent, now that the child has started successfully.
-		if err := goagain.Kill(); nil != err {
+		if err := goagain.Kill(syscall.SIGQUIT); nil != err {
 			log.Fatalln(err)
 		}
 
 	}
 
+	forkSig := syscall.SIGHUP
+	quitSig := syscall.SIGQUIT
+
 	// Block the main goroutine awaiting signals.
-	if _, err := goagain.Wait(l); nil != err {
+	if err := goagain.Wait(l, forkSig, quitSig); err != nil {
 		log.Fatalln(err)
 	}
 
