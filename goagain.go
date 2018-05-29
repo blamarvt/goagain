@@ -79,27 +79,27 @@ func Listener() (l net.Listener, err error) {
 }
 
 // Fork and exec this same image without dropping the net.Listener.
-func forkExec(l net.Listener, quitSignal syscall.Signal) error {
+func forkExec(l net.Listener, quitSignal syscall.Signal) (os.Process, error) {
 	argv0, err := lookPath()
 	if nil != err {
-		return err
+		return nil, err
 	}
 	wd, err := os.Getwd()
 	if nil != err {
-		return err
+		return nil, err
 	}
 	fd, err := setEnvs(l)
 	if nil != err {
-		return err
+		return nil, err
 	}
 	if err := os.Setenv("GOAGAIN_PID", ""); nil != err {
-		return err
+		return nil, err
 	}
 	if err := os.Setenv(
 		"GOAGAIN_PPID",
 		fmt.Sprint(syscall.Getpid()),
 	); nil != err {
-		return err
+		return nil, err
 	}
 	files := make([]*os.File, fd+1)
 	files[syscall.Stdin] = os.Stdin
@@ -117,16 +117,16 @@ func forkExec(l net.Listener, quitSignal syscall.Signal) error {
 		Sys:   &syscall.SysProcAttr{},
 	})
 	if nil != err {
-		return err
+		return nil, err
 	}
 	logln("spawned child", p.Pid)
 	if err = os.Setenv("GOAGAIN_PID", fmt.Sprint(p.Pid)); nil != err {
-		return err
+		return p, err
 	}
-	return nil
+	return p, nil
 }
 
-func Wait(l net.Listener, forkSignal syscall.Signal, quitSignal syscall.Signal) error {
+func Wait(l net.Listener, forkSignal syscall.Signal, quitSignal syscall.Signal, timeout time.Duration) error {
 	forkCh := make(chan os.Signal, 1)
 	signal.Notify(forkCh, forkSignal)
 
@@ -134,8 +134,17 @@ func Wait(l net.Listener, forkSignal syscall.Signal, quitSignal syscall.Signal) 
 
 	<-forkCh
 
-	if err := forkExec(l, quitSignal); err != nil {
+	cp, err := forkExec(l, quitSignal)
+	if err != nil {
 		logln(err)
+
+		if cp != nil {
+			kErr := cp.Kill()
+			if kErr != nil {
+				logln("Unable to kill process after bad forkExec", kErr)
+			}
+		}
+
 		return err
 	}
 
@@ -147,8 +156,12 @@ func Wait(l net.Listener, forkSignal syscall.Signal, quitSignal syscall.Signal) 
 	select {
 	case <-quitCh:
 		logln("Received quit signal from child.")
-	case <-time.After(30 * time.Second):
+	case <-time.After(timeout):
 		logln("Received quit signal from child.")
+		err = cp.Kill()
+		if err != nil {
+			logln("Unable to kill process after timeout", err)
+		}
 		return fmt.Errorf("Timed out waiting for child to send signal.")
 	}
 
