@@ -79,7 +79,7 @@ func Listener() (l net.Listener, err error) {
 }
 
 // Fork and exec this same image without dropping the net.Listener.
-func forkExec(l net.Listener, quitSignal syscall.Signal) (os.Process, error) {
+func forkExec(l net.Listener, quitSignal syscall.Signal) (*os.Process, error) {
 	argv0, err := lookPath()
 	if nil != err {
 		return nil, err
