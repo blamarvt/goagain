@@ -157,12 +157,13 @@ func Wait(l net.Listener, forkSignal syscall.Signal, quitSignal syscall.Signal, 
 	case <-quitCh:
 		logln("Received quit signal from child.")
 	case <-time.After(timeout):
-		logln("Received quit signal from child.")
+		msg := "Timed out waiting for child to send signal"
+		logln(msg)
 		err = cp.Kill()
 		if err != nil {
 			logln("Unable to kill process after timeout", err)
 		}
-		return fmt.Errorf("Timed out waiting for child to send signal.")
+		return fmt.Errorf(msg)
 	}
 
 	return nil
