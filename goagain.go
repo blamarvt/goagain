@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 var Logger *log.Logger
@@ -126,27 +127,29 @@ func forkExec(l net.Listener, quitSignal syscall.Signal) error {
 }
 
 func Wait(l net.Listener, forkSignal syscall.Signal, quitSignal syscall.Signal) error {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, forkSignal, quitSignal)
+	forkCh := make(chan os.Signal, 1)
+	signal.Notify(forkCh, forkSignal)
 
-	forked := false
+	logln("Waiting for fork signal from system...")
 
-	for {
-		sig := <-ch
-		logln(sig.String())
-		switch sig {
-		case forkSignal:
-			if forked {
-				continue
-			}
-			forked = true
-			if err := forkExec(l, quitSignal); err != nil {
-				logln(err)
-				return err
-			}
-		case quitSignal:
-			return nil
-		}
+	<-forkCh
+
+	if err := forkExec(l, quitSignal); err != nil {
+		logln(err)
+		return err
+	}
+
+	logln("Waiting for quit signal from child...")
+
+	quitCh := make(chan os.Signal, 1)
+	signal.Notify(quitCh, quitSignal)
+
+	select {
+	case <-quitCh:
+		logln("Received quit signal from child.")
+	case <-time.After(30 * time.Second):
+		logln("Received quit signal from child.")
+		return fmt.Errorf("Timed out waiting for child to send signal.")
 	}
 
 	return nil
